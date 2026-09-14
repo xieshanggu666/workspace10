@@ -203,13 +203,18 @@ const state = {
   ap: AP_PER_NIGHT,
 };
 
+let confirmOpen = false; // 确认框是否打开（打开期间锁定背景交互）
+let lastFocused = null;
+
 // ===== DOM =====
 const $ = (id) => document.getElementById(id);
 const dayEl = $("day"), phaseEl = $("phase");
 const pipsEl = $("pips"), apLeftEl = $("apLeft"), apMaxEl = $("apMax");
 const overlayEl = $("confirmOverlay");
+const gameEl = document.querySelector(".game");
 const remainApEl = $("remainAp"), remainDayEl = $("remainDay");
 const logEl = $("log");
+const cancelBtn = $("cancelEnd"), confirmBtn = $("confirmEnd");
 
 // ===== 渲染 =====
 function render() {
@@ -241,6 +246,8 @@ const ACT_NAMES = { explore: "外出探索", rest: "整理营地", guard: "通�
 
 document.querySelectorAll("[data-cost]").forEach((btn) => {
   btn.addEventListener("click", () => {
+    // 保险：确认框打开期间，背景任何行动一律不生效
+    if (confirmOpen) return;
     const cost = Number(btn.dataset.cost);
     if (state.ap < cost) return;
     state.ap -= cost;
@@ -250,19 +257,36 @@ document.querySelectorAll("[data-cost]").forEach((btn) => {
 });
 
 // ===== 结束当日 =====
-$("endDayBtn").addEventListener("click", requestEndDay);
-$("cancelEnd").addEventListener("click", hideConfirm);
-$("confirmEnd").addEventListener("click", () => {
+$("endDayBtn").addEventListener("click", () => {
+  if (confirmOpen) return; // 防止弹窗打开期间被键盘重复触发
+  requestEndDay();
+});
+cancelBtn.addEventListener("click", hideConfirm);
+confirmBtn.addEventListener("click", () => {
   hideConfirm();
   advanceDay();
 });
 
-// Esc 关闭弹窗 = 取消
-overlayEl.addEventListener("click", (e) => {
+// Esc 关闭弹窗 = 取消；Tab 焦点锁在弹窗内
+overlayEl.addEventListener("mousedown", (e) => {
   if (e.target === overlayEl) hideConfirm();
 });
 document.addEventListener("keydown", (e) => {
-  if (e.key === "Escape" && overlayEl.classList.contains("show")) hideConfirm();
+  if (!confirmOpen) return;
+  if (e.key === "Escape") {
+    e.preventDefault();
+    hideConfirm();
+    return;
+  }
+  if (e.key === "Tab") {
+    // 显式接管焦点移动，在弹窗两个按钮间循环，不依赖默认 Tab 行为
+    const focusables = [cancelBtn, confirmBtn];
+    const idx = focusables.indexOf(document.activeElement);
+    const dir = e.shiftKey ? -1 : 1;
+    const next = focusables[(idx + dir + focusables.length) % focusables.length];
+    e.preventDefault();
+    next.focus();
+  }
 });
 
 /**
@@ -279,14 +303,26 @@ function requestEndDay() {
 }
 
 function showConfirm(remaining) {
+  if (confirmOpen) return;
+  confirmOpen = true;
   remainApEl.textContent = remaining;
   remainDayEl.textContent = state.day;
   overlayEl.classList.add("show");
-  $("cancelEnd").focus();
+  // 背景整体移出 Tab 序列、屏蔽点击与辅助技术交互，
+  // 键盘无法再操作到背后的行动按钮
+  gameEl.inert = true;
+  lastFocused = document.activeElement;
+  cancelBtn.focus();
 }
 
 function hideConfirm() {
+  if (!confirmOpen) return;
+  confirmOpen = false;
   overlayEl.classList.remove("show");
+  gameEl.inert = false;
+  if (lastFocused && typeof lastFocused.focus === "function") {
+    lastFocused.focus(); // 把焦点还给触发弹窗的按钮
+  }
 }
 
 function advanceDay() {
