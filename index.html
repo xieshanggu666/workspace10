@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>行动点 · 结束当日确认</title>
+<style>
+  :root {
+    --bg: #14161c;
+    --panel: #1e222c;
+    --panel-2: #262b38;
+    --text: #e8eaf0;
+    --muted: #9aa3b5;
+    --accent: #e8a84a;
+    --accent-dim: #8a6326;
+    --danger: #e06a5a;
+    --ok: #6ec07a;
+    --border: #333a49;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    background: var(--bg);
+    color: var(--text);
+    font-family: "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+  }
+  .game {
+    width: 100%;
+    max-width: 520px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 24px;
+    box-shadow: 0 12px 40px rgba(0,0,0,.4);
+  }
+  .topbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 4px;
+  }
+  .day { font-size: 22px; font-weight: 700; }
+  .phase { color: var(--muted); font-size: 14px; }
+  .ap-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 16px 0 20px;
+    padding: 14px 16px;
+    background: var(--panel-2);
+    border-radius: 10px;
+  }
+  .ap-label { color: var(--muted); font-size: 14px; }
+  .pips { display: flex; gap: 8px; }
+  .pip {
+    width: 22px; height: 22px;
+    border-radius: 50%;
+    border: 2px solid var(--accent-dim);
+    background: transparent;
+    transition: all .15s;
+  }
+  .pip.on {
+    background: var(--accent);
+    border-color: var(--accent);
+    box-shadow: 0 0 10px rgba(232,168,74,.5);
+  }
+  .pip.off { opacity: .25; }
+  .ap-count { margin-left: auto; font-weight: 700; color: var(--accent); }
+
+  .actions { display: flex; flex-direction: column; gap: 10px; }
+  button {
+    font: inherit;
+    cursor: pointer;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    padding: 12px 16px;
+    background: var(--panel-2);
+    color: var(--text);
+    transition: filter .12s, transform .05s;
+  }
+  button:hover:not(:disabled) { filter: brightness(1.15); }
+  button:active:not(:disabled) { transform: translateY(1px); }
+  button:disabled { opacity: .4; cursor: not-allowed; }
+  .cost { color: var(--muted); font-size: 13px; margin-left: 6px; }
+  .end-day {
+    margin-top: 18px;
+    width: 100%;
+    background: #3a2f1e;
+    border-color: var(--accent-dim);
+    color: var(--accent);
+    font-weight: 600;
+  }
+  .log {
+    margin-top: 18px;
+    font-size: 13px;
+    color: var(--muted);
+    max-height: 120px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .log div::before { content: "· "; }
+
+  /* modal */
+  .overlay {
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,.6);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    z-index: 10;
+  }
+  .overlay.show { display: flex; }
+  .modal {
+    width: 100%;
+    max-width: 400px;
+    background: var(--panel);
+    border: 1px solid var(--danger);
+    border-radius: 12px;
+    padding: 22px;
+    box-shadow: 0 0 30px rgba(224,106,90,.15);
+  }
+  .modal h3 { margin: 0 0 10px; font-size: 17px; }
+  .modal h3 .warn { color: var(--danger); }
+  .modal p { margin: 0 0 8px; color: var(--text); line-height: 1.6; font-size: 14px; }
+  .modal .sub { color: var(--muted); font-size: 13px; }
+  .modal .remaining {
+    display: inline-block;
+    min-width: 1.2em;
+    padding: 0 6px;
+    margin: 0 2px;
+    border-radius: 5px;
+    background: rgba(232,168,74,.18);
+    color: var(--accent);
+    font-weight: 700;
+  }
+  .modal-btns { display: flex; gap: 10px; margin-top: 20px; }
+  .modal-btns button { flex: 1; }
+  .btn-cancel {
+    background: var(--panel-2);
+  }
+  .btn-confirm {
+    background: #4a2420;
+    border-color: var(--danger);
+    color: #ffb0a4;
+  }
+</style>
+</head>
+<body>
+
+<div class="game">
+  <div class="topbar">
+    <div class="day">第 <span id="day">1</span> 天</div>
+    <div class="phase" id="phase">夜晚</div>
+  </div>
+
+  <div class="ap-row">
+    <span class="ap-label">行动点</span>
+    <div class="pips" id="pips"></div>
+    <span class="ap-count"><span id="apLeft">2</span> / <span id="apMax">2</span></span>
+  </div>
+
+  <div class="actions">
+    <button data-act="explore" data-cost="1">外出探索<span class="cost">消耗 1 点</span></button>
+    <button data-act="rest" data-cost="1">整理营地<span class="cost">消耗 1 点</span></button>
+    <button data-act="guard" data-cost="2">通宵守夜<span class="cost">消耗 2 点</span></button>
+  </div>
+
+  <button class="end-day" id="endDayBtn">结束当日，进入下一天 →</button>
+
+  <div class="log" id="log"></div>
+</div>
+
+<!-- 剩余行动点确认弹窗 -->
+<div class="overlay" id="confirmOverlay">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="confirmTitle">
+    <h3 id="confirmTitle"><span class="warn">⚠ 行动点尚未用完</span></h3>
+    <p>本时段还剩 <span class="remaining" id="remainAp">2</span> 点行动点未使用，结束当日后将被<span style="color:var(--danger)">放弃</span>，无法顺延到明天。</p>
+    <p class="sub">确定要现在结束第 <span id="remainDay">1</span> 天吗？</p>
+    <div class="modal-btns">
+      <button class="btn-cancel" id="cancelEnd">再行动一会儿</button>
+      <button class="btn-confirm" id="confirmEnd">放弃点数并结束</button>
+    </div>
+  </div>
+</div>
+
+<script>
+"use strict";
+
+// ===== 游戏状态 =====
+const AP_PER_NIGHT = 2; // 夜晚可用行动点
+
+const state = {
+  day: 1,
+  apMax: AP_PER_NIGHT,
+  ap: AP_PER_NIGHT,
+};
+
+// ===== DOM =====
+const $ = (id) => document.getElementById(id);
+const dayEl = $("day"), phaseEl = $("phase");
+const pipsEl = $("pips"), apLeftEl = $("apLeft"), apMaxEl = $("apMax");
+const overlayEl = $("confirmOverlay");
+const remainApEl = $("remainAp"), remainDayEl = $("remainDay");
+const logEl = $("log");
+
+// ===== 渲染 =====
+function render() {
+  dayEl.textContent = state.day;
+  phaseEl.textContent = "夜晚";
+  apLeftEl.textContent = state.ap;
+  apMaxEl.textContent = state.apMax;
+
+  pipsEl.innerHTML = "";
+  for (let i = 0; i < state.apMax; i++) {
+    const pip = document.createElement("span");
+    pip.className = "pip " + (i < state.ap ? "on" : "off");
+    pipsEl.appendChild(pip);
+  }
+
+  document.querySelectorAll("[data-cost]").forEach((btn) => {
+    btn.disabled = state.ap < Number(btn.dataset.cost);
+  });
+}
+
+function addLog(text) {
+  const line = document.createElement("div");
+  line.textContent = text;
+  logEl.prepend(line);
+}
+
+// ===== 行动 =====
+const ACT_NAMES = { explore: "外出探索", rest: "整理营地", guard: "通宵守夜" };
+
+document.querySelectorAll("[data-cost]").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    const cost = Number(btn.dataset.cost);
+    if (state.ap < cost) return;
+    state.ap -= cost;
+    addLog(`第 ${state.day} 天夜晚：${ACT_NAMES[btn.dataset.act]}（-${cost} 点）`);
+    render();
+  });
+});
+
+// ===== 结束当日 =====
+$("endDayBtn").addEventListener("click", requestEndDay);
+$("cancelEnd").addEventListener("click", hideConfirm);
+$("confirmEnd").addEventListener("click", () => {
+  hideConfirm();
+  advanceDay();
+});
+
+// Esc 关闭弹窗 = 取消
+overlayEl.addEventListener("click", (e) => {
+  if (e.target === overlayEl) hideConfirm();
+});
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && overlayEl.classList.contains("show")) hideConfirm();
+});
+
+/**
+ * 请求结束当日：
+ * - 行动点已用完：直接进入下一天
+ * - 仍有剩余：先弹确认，说明将放弃几点，确认后才推进
+ */
+function requestEndDay() {
+  if (state.ap > 0) {
+    showConfirm(state.ap);
+  } else {
+    advanceDay();
+  }
+}
+
+function showConfirm(remaining) {
+  remainApEl.textContent = remaining;
+  remainDayEl.textContent = state.day;
+  overlayEl.classList.add("show");
+  $("cancelEnd").focus();
+}
+
+function hideConfirm() {
+  overlayEl.classList.remove("show");
+}
+
+function advanceDay() {
+  if (state.ap > 0) {
+    addLog(`第 ${state.day} 天结束：放弃了 ${state.ap} 点未使用的行动点`);
+  } else {
+    addLog(`第 ${state.day} 天结束：行动点已全部用完`);
+  }
+  state.day += 1;
+  state.ap = state.apMax; // 新的一天恢复点数，不累计昨日剩余
+  render();
+}
+
+render();
+</script>
+</body>
+</html>
